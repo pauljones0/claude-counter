@@ -48,7 +48,9 @@ COMMON_FILES=(
   LICENSE
 )
 
-# Use zip if available, otherwise fall back to PowerShell (Windows)
+# Create a zip archive with forward-slash paths (required by Firefox addon linter).
+# Uses zip if available, otherwise falls back to Python (cross-platform).
+# PowerShell's Compress-Archive writes backslash paths on Windows, which Firefox rejects.
 create_archive() {
   local staging_dir="$1"
   local output_path="$2"
@@ -56,12 +58,18 @@ create_archive() {
   if command -v zip &>/dev/null; then
     (cd "$staging_dir" && zip -r -q "$(cd "$SCRIPT_DIR" && pwd)/$output_path" .)
   else
-    # Windows fallback using PowerShell
-    local abs_staging
-    abs_staging=$(cd "$staging_dir" && pwd -W 2>/dev/null || pwd)
-    local abs_output
-    abs_output="$(cd "$SCRIPT_DIR" && pwd -W 2>/dev/null || pwd)/$output_path"
-    powershell.exe -NoProfile -Command "Compress-Archive -Path '${abs_staging}\\*' -DestinationPath '${abs_output}' -Force"
+    # Cross-platform fallback using Python's zipfile (guarantees forward slashes)
+    python3 -c "
+import zipfile, os, sys
+staging = sys.argv[1]
+output = sys.argv[2]
+with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(staging):
+        for f in files:
+            abs_path = os.path.join(root, f)
+            arc_name = os.path.relpath(abs_path, staging).replace(os.sep, '/')
+            zf.write(abs_path, arc_name)
+" "$staging_dir" "$SCRIPT_DIR/$output_path"
   fi
 }
 
@@ -106,8 +114,7 @@ build_firefox() {
 
   # Firefox .xpi is just a zip with a different extension
   rm -f "$OUT"
-  create_archive "$STAGING" "${OUT%.xpi}.zip"
-  mv "${OUT%.xpi}.zip" "$OUT"
+  create_archive "$STAGING" "$OUT"
 
   rm -rf "$STAGING"
   echo "  -> $OUT"
