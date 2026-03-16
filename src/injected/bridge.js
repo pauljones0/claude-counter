@@ -1,3 +1,21 @@
+/**
+ * @file bridge.js — Injected into the PAGE context (not the content-script sandbox).
+ *
+ * This script runs as a <script> tag on claude.ai so it can:
+ *   1. Wrap window.fetch BEFORE any framework caches it, letting us
+ *      intercept SSE streams (for message_limit events) and conversation
+ *      tree fetches (for token counting) without breaking claude.ai.
+ *   2. Wrap history.pushState/replaceState to fire cc:urlchange events,
+ *      since claude.ai is a SPA and doesn't trigger normal navigation.
+ *   3. Handle RPC requests from the content script (via postMessage)
+ *      to fetch /usage data and compute SHA-256 hashes — operations
+ *      that need the page's origin cookies or crypto.subtle access.
+ *
+ * Communication protocol:
+ *   Content script -> bridge:  { cc: 'ClaudeCounter', type: 'cc:request', requestId, kind, payload }
+ *   Bridge -> content script:  { cc: 'ClaudeCounter', type: 'cc:response', requestId, ok, payload, error }
+ *   Bridge -> content script:  { cc: 'ClaudeCounter', type: 'cc:*', payload }  (events)
+ */
 (() => {
 	'use strict';
 

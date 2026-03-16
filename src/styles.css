@@ -1,3 +1,14 @@
+/**
+ * styles.css — Claude Counter UI styles.
+ *
+ * All classes are prefixed with "cc-" to avoid conflicts with claude.ai's
+ * own styles. Progress bars use CSS custom properties (--cc-stroke, --cc-fill,
+ * --cc-marker) that are set dynamically by ui.js based on the current theme.
+ *
+ * The extension also uses claude.ai's Tailwind utility classes (text-text-500,
+ * bg-bg-500, etc.) directly in JavaScript for consistency with the host page.
+ */
+
 /* Header: tokens + cache timer */
 .cc-header {
 	margin-top: 2px;

@@ -1,0 +1,40 @@
+Stop guessing how much Claude you have left.
+
+Claude Counter adds real-time usage tracking directly into claude.ai — no extra tabs, no guesswork. It lives right in the composer so you always know where you stand.
+
+## What You Get
+
+**Token Counter**
+See an approximate token count for your current conversation, with a mini progress bar against Claude's 200k context limit. Know exactly when you're running long before Claude starts compacting your context.
+
+**Cache Timer**
+A live countdown showing how long your conversation stays cached. Messages sent while cached are significantly cheaper on your plan — this timer tells you the optimal window to keep chatting.
+
+**Usage Bars**
+Full-precision session (5-hour) and weekly (7-day) usage bars with reset countdowns. These are *more accurate* than Claude's own /usage page because they use the unrounded utilization fractions from Claude's live SSE stream rather than the rounded percentages on the usage page.
+
+## Why This Matters
+
+Claude subscriptions use a credit-based system under the hood. Your plan has both a 5-hour session limit and a 7-day weekly limit. Without visibility into these, you hit walls unexpectedly. Claude Counter makes both limits visible at a glance.
+
+The cache timer is especially valuable: cache reads are free on subscription plans. If you send a message while the cache is still warm (within 5 minutes of the last assistant response), your entire conversation history counts as a cache read — dramatically reducing the credits consumed. The timer lets you take advantage of this.
+
+## How It Works
+
+- Intercepts Claude's API responses (read-only) to extract conversation data and usage info
+- Uses a vendored tokenizer (o200k_base) for approximate token counting
+- Combines Claude's /usage endpoint with live SSE message_limit data for maximum accuracy
+- Seamlessly injects UI elements as you navigate between conversations
+
+## Privacy First
+
+- All processing happens locally in your browser — zero external servers, zero tracking
+- Reads only the `lastActiveOrg` cookie to query Claude's own usage endpoint
+- Makes requests only to claude.ai — never to any third-party server
+- No data collection whatsoever
+- Open source: inspect every line of code on GitHub
+
+## Permissions
+
+- claude.ai only — the extension has no access to any other website
+- No background scripts, no storage permissions, no network requests beyond claude.ai

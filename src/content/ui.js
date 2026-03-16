@@ -1,8 +1,33 @@
+/**
+ * @file ui.js — All DOM creation and rendering for Claude Counter.
+ *
+ * Creates and manages two UI regions injected into claude.ai:
+ *
+ *   1. Header row (next to chat menu): shows "~N tokens" with a mini
+ *      context-length bar, plus a "cached for M:SS" countdown timer.
+ *
+ *   2. Usage row (below the composer toolbar): shows session (5h) and
+ *      weekly (7d) usage bars with percentage + reset countdown text.
+ *      Bars turn red at 90% and solid at 100%. A vertical marker line
+ *      shows your current position within the time window.
+ *
+ * The class is theme-aware — it watches <html data-mode="dark|light">
+ * and updates bar colors accordingly. All elements use claude.ai's own
+ * Tailwind utility classes where possible for visual consistency.
+ *
+ * Tooltips appear on hover (desktop) or long-press (touch) to explain
+ * what each metric means.
+ */
 (() => {
 	'use strict';
 
 	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
 
+	/**
+	 * Format a duration in seconds as "M:SS".
+	 * @param {number} totalSeconds
+	 * @returns {string}
+	 */
 	function formatSeconds(totalSeconds) {
 		const minutes = Math.floor(totalSeconds / 60);
 		const seconds = totalSeconds % 60;

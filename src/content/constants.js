@@ -1,8 +1,17 @@
+/**
+ * @file constants.js — Shared constants for Claude Counter.
+ *
+ * Defines DOM selectors used to anchor UI elements into claude.ai's interface,
+ * timing/limit constants, and theme-aware color tokens for progress bars.
+ *
+ * All values are frozen to prevent accidental mutation from other modules.
+ */
 (() => {
 	'use strict';
 
 	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
 
+	/** DOM selectors for anchoring Claude Counter UI into claude.ai's layout. */
 	CC.DOM = Object.freeze({
 		CHAT_MENU_TRIGGER: '[data-testid="chat-menu-trigger"]',
 		MODEL_SELECTOR_DROPDOWN: '[data-testid="model-selector-dropdown"]',

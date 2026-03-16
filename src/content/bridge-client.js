@@ -1,8 +1,21 @@
+/**
+ * @file bridge-client.js — Content-script side of the page<->extension bridge.
+ *
+ * Claude Counter needs to intercept fetch() calls that happen in the PAGE
+ * context (not the content-script sandbox). This module provides a
+ * request/response RPC layer over window.postMessage so the content script
+ * can ask the injected bridge (bridge.js) to fetch usage data, conversation
+ * trees, and compute SHA-256 hashes — all using the page's origin cookies.
+ *
+ * It also exposes an event emitter (bridge.on) so other modules can react
+ * to real-time SSE events like message_limit updates and generation starts.
+ */
 (() => {
 	'use strict';
 
 	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
 
+	/** @returns {object|null} The browser/chrome runtime, or null in userscript mode. */
 	function getRuntime() {
 		return globalThis.browser?.runtime || globalThis.chrome?.runtime || null;
 	}

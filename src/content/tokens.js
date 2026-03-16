@@ -1,8 +1,24 @@
+/**
+ * @file tokens.js — Token counting and conversation metrics for Claude Counter.
+ *
+ * Walks the conversation tree from the current leaf message back to the root,
+ * tokenizes each message's visible content (text, tool_use, tool_result,
+ * attachments — excluding thinking blocks and binary content), and computes:
+ *
+ *   - totalTokens: approximate token count using the o200k_base tokenizer
+ *   - cachedUntil: timestamp when the 5-minute cache window expires
+ *     (cache reads are free on Claude subscriptions, so knowing this window
+ *      helps users time their messages for maximum value)
+ *
+ * Uses a fingerprint-based TokenCache to avoid re-tokenizing unchanged
+ * messages on every conversation update.
+ */
 (() => {
 	'use strict';
 
 	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
 
+	/** Sentinel UUID representing the root of every conversation tree. */
 	const ROOT_MESSAGE_ID = '00000000-0000-4000-8000-000000000000';
 
 	function stableStringify(value) {

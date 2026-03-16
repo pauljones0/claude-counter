@@ -1,3 +1,16 @@
+/**
+ * @file main.js — Entry point and orchestrator for Claude Counter.
+ *
+ * Wires together the bridge, token counter, and UI modules. Responsibilities:
+ *
+ *   - Detects the current conversation ID and org ID from the URL/cookies
+ *   - Listens for URL changes (SPA navigation) to re-attach UI and fetch data
+ *   - Processes SSE message_limit events for real-time usage bar updates
+ *   - Fetches conversation trees and computes token metrics
+ *   - Handles usage window rollovers (auto-refreshes when a 5h/7d window resets)
+ *   - Watches for branch navigation (Previous/Next buttons) to re-count tokens
+ *   - Runs a 1-second tick loop for countdown timers and time-position markers
+ */
 (() => {
 	'use strict';
 
