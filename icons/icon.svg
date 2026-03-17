@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4A574"/>
+      <stop offset="100%" stop-color="#C4956A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- Gauge track (faint white arc, 270 degrees) -->
+  <circle cx="128" cy="128" r="78" fill="none" stroke="#FFFFFF" stroke-opacity="0.25"
+          stroke-width="20" stroke-linecap="round"
+          stroke-dasharray="368 453" stroke-dashoffset="-43"/>
+
+  <!-- Gauge fill (42% of 270 = 113.4 degrees) -->
+  <circle cx="128" cy="128" r="78" fill="none" stroke="#FFFFFF" stroke-opacity="0.92"
+          stroke-width="20" stroke-linecap="round"
+          stroke-dasharray="155 453" stroke-dashoffset="-43"/>
+
+  <!-- "42%" big and bold, centered -->
+  <text x="128" y="138" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+        font-size="56" font-weight="800" fill="#FFFFFF" opacity="0.95">42%</text>
+</svg>
