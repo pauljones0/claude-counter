@@ -15,11 +15,11 @@
 		if (diffMs <= 0) return '0s';
 
 		// < 1 min: show seconds
-		const totalSecond = Math.floor(diffMs / 1000);
-		if (totalSecond < 60) return `${totalSecond}s`;
+		const totalSeconds = Math.floor(diffMs / 1000);
+		if (totalSeconds < 60) return `${totalSeconds}s`;
 
 		// < 1 hour: show minutes
-		const totalMinutes = Math.round(totalSecond / 60);
+		const totalMinutes = Math.round(totalSeconds / 60);
 		if (totalMinutes < 60) return `${totalMinutes}m`;
 
 		// < 1 day: show hours
