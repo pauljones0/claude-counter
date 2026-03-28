@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build packages
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Find the previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p')
+          if [ -n "$PREV_TAG" ]; then
+            echo "Changelog since $PREV_TAG:" > changelog.md
+            echo "" >> changelog.md
+            git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD -- ':!.github' >> changelog.md
+          else
+            echo "Initial release." > changelog.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          body_path: changelog.md
+          files: |
+            dist/claude-counter-${{ steps.version.outputs.version }}-chrome.zip
+            dist/claude-counter-${{ steps.version.outputs.version }}-firefox.xpi

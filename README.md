@@ -35,21 +35,18 @@ Without visibility into these limits, you hit walls unexpectedly. Claude Counter
 
 ## Installation
 
-### Chrome Web Store
-*(Coming soon — see manual install below)*
-
 ### Firefox Add-ons
-*(Coming soon — see manual install below)*
+Install from [Firefox Add-ons (AMO)](https://addons.mozilla.org/en-CA/firefox/addon/claude-counter/).
 
 ### Manual Install
 
 **Chrome / Edge / Chromium**
-1. Download [`claude-counter-0.4.2-chrome.zip`](../../releases/download/v0.4.2/claude-counter-0.4.2-chrome.zip)
+1. Download the latest `claude-counter-*-chrome.zip` from [GitHub Releases](https://github.com/pauljones0/claude-counter/releases/latest)
 2. Go to `chrome://extensions` and enable **Developer mode**
 3. Drag and drop the zip onto the page
 
 **Firefox**
-1. Download [`claude-counter-0.4.2-firefox.xpi`](../../releases/download/v0.4.2/claude-counter-0.4.2-firefox.xpi)
+1. Download the latest `claude-counter-*-firefox.xpi` from [GitHub Releases](https://github.com/pauljones0/claude-counter/releases/latest)
 2. Drag it into any Firefox window and click **Add**
 
 **Userscript**
