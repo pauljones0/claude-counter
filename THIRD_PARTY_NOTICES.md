@@ -6,6 +6,8 @@ This project vendors a small amount of third‑party code/data.
 
 - Used for: the bundled `o200k_base` tokenizer implementation used for approximate token counting.
 - Vendored file: `src/vendor/o200k_base.js`
+- Version: 4.0.0, pinned in package-lock.json and rebuilt without minification by scripts/build.mjs using esbuild 0.28.2.
+- Source: https://github.com/niieani/gpt-tokenizer and the integrity-checked npm package `gpt-tokenizer@4.0.0` (includes TypeScript sources).
 - License: MIT (full text below).
 
 ### MIT License (gpt-tokenizer)

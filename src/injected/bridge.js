@@ -1,202 +1,103 @@
-/**
- * @file bridge.js — Injected into the PAGE context (not the content-script sandbox).
- *
- * This script runs as a <script> tag on claude.ai so it can:
- *   1. Wrap window.fetch BEFORE any framework caches it, letting us
- *      intercept SSE streams (for message_limit events) and conversation
- *      tree fetches (for token counting) without breaking claude.ai.
- *   2. Wrap history.pushState/replaceState to fire cc:urlchange events,
- *      since claude.ai is a SPA and doesn't trigger normal navigation.
- *   3. Handle RPC requests from the content script (via postMessage)
- *      to fetch /usage data and compute SHA-256 hashes — operations
- *      that need the page's origin cookies or crypto.subtle access.
- *
- * Communication protocol:
- *   Content script -> bridge:  { cc: 'ClaudeCounter', type: 'cc:request', requestId, kind, payload }
- *   Bridge -> content script:  { cc: 'ClaudeCounter', type: 'cc:response', requestId, ok, payload, error }
- *   Bridge -> content script:  { cc: 'ClaudeCounter', type: 'cc:*', payload }  (events)
- */
+/** Page-world read-only adapter. Only Claude API responses are inspected. */
 (() => {
-	'use strict';
-
-	const CC_MARKER = 'ClaudeCounter';
-
-	// Capture original fetch before anyone else can wrap it
-	const originalFetch = window.fetch;
-
-	// Wrap history methods early to detect SPA navigation (before frameworks cache them)
-	const originalPushState = history.pushState.bind(history);
-	const originalReplaceState = history.replaceState.bind(history);
-
-	history.pushState = function (...args) {
-		const result = originalPushState(...args);
-		window.dispatchEvent(new CustomEvent('cc:urlchange'));
-		return result;
-	};
-
-	history.replaceState = function (...args) {
-		const result = originalReplaceState(...args);
-		window.dispatchEvent(new CustomEvent('cc:urlchange'));
-		return result;
-	};
-
-	window.fetch = async (...args) => {
-		const url = toAbsoluteUrl(args[0]);
-		const opts = args[1] || {};
-
-		// Detect generation start (completion requests)
-		if (url && opts.method === 'POST' && (url.includes('/completion') || url.includes('/retry_completion'))) {
-			post('cc:generation_start', {});
-		}
-
-		const response = await originalFetch.apply(window, args);
-
-		const contentType = response.headers.get('content-type') || '';
-		if (contentType.includes('event-stream')) {
-			handleEventStream(response);
-		}
-
-		// Catch conversation tree fetches
-		if (url && url.includes('/chat_conversations/') && url.includes('tree=')) {
-			const meta = getConversationMeta(url);
-			if (meta) {
-				handleConversationResponse(meta, response);
-			}
-		}
-
-		return response;
-	};
-
-	function post(type, payload) {
-		window.postMessage({ cc: CC_MARKER, type, payload }, '*');
-	}
-
-	function postResponse(requestId, ok, payload, error) {
-		window.postMessage(
-			{
-				cc: CC_MARKER,
-				type: 'cc:response',
-				requestId,
-				ok,
-				payload,
-				error
-			},
-			'*'
-		);
-	}
-
-	function toAbsoluteUrl(input) {
-		if (typeof input === 'string') {
-			if (input.startsWith('/')) return `https://claude.ai${input}`;
-			return input;
-		}
-		if (input instanceof URL) return input.href;
-		if (input instanceof Request) return input.url;
-		return '';
-	}
-
-	function getConversationMeta(url) {
-		// /api/organizations/{orgId}/chat_conversations/{conversationId}
-		const match = url.match(/^https:\/\/claude\.ai\/api\/organizations\/([^/]+)\/chat_conversations\/([^/?]+)/);
-		return match ? { orgId: match[1], conversationId: match[2] } : null;
-	}
-
-	async function handleConversationResponse({ orgId, conversationId }, response) {
-		try {
-			const cloned = response.clone();
-			const data = await cloned.json();
-			post('cc:conversation', { orgId, conversationId, data });
-		} catch {
-			// ignore parse failures
-		}
-	}
-
-	async function handleEventStream(response) {
-		try {
-			const cloned = response.clone();
-			const reader = cloned.body?.getReader?.();
-			if (!reader) return;
-			const decoder = new TextDecoder();
-			let buffer = '';
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split(/\r\n|\r|\n/);
-				buffer = lines.pop() || '';
-				for (const line of lines) {
-					if (!line.startsWith('data:')) continue;
-					const raw = line.slice(5).trim();
-					if (!raw) continue;
-					try {
-						const json = JSON.parse(raw);
-						if (json?.type === 'message_limit' && json.message_limit) {
-							post('cc:message_limit', json.message_limit);
-						}
-					} catch {
-						// ignore
-					}
-				}
-			}
-		} catch {
-			// best-effort; don't break claude.ai
-		}
-	}
-
-	window.addEventListener('message', async (event) => {
-		if (event.source !== window) return;
-		const data = event.data;
-		if (!data || data.cc !== CC_MARKER) return;
-		if (data.type !== 'cc:request') return;
-
-		const { requestId, kind, payload } = data;
-		try {
-			if (kind === 'hash') {
-				const text = typeof payload?.text === 'string' ? payload.text : '';
-				if (!text || !crypto?.subtle?.digest) {
-					postResponse(requestId, false, null, 'Hash unavailable');
-					return;
-				}
-				const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-				const bytes = new Uint8Array(buffer);
-				const hash = Array.from(bytes.slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
-				postResponse(requestId, true, { hash }, null);
-				return;
-			}
-
-			if (kind === 'usage') {
-				const orgId = payload?.orgId;
-				if (!orgId) throw new Error('Missing orgId');
-				const res = await originalFetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
-					method: 'GET',
-					credentials: 'include'
-				});
-				const json = await res.json();
-				postResponse(requestId, true, json, null);
-				return;
-			}
-
-			if (kind === 'conversation') {
-				const orgId = payload?.orgId;
-				const conversationId = payload?.conversationId;
-				if (!orgId || !conversationId) throw new Error('Missing orgId/conversationId');
-
-				const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=true&rendering_mode=messages&render_all_tools=true`;
-				const res = await originalFetch(url, {
-					method: 'GET',
-					credentials: 'include'
-				});
-				const json = await res.json();
-				post('cc:conversation', { orgId, conversationId, data: json });
-				postResponse(requestId, true, json, null);
-				return;
-			}
-
-			throw new Error(`Unknown request kind: ${kind}`);
-		} catch (e) {
-			postResponse(requestId, false, null, e?.message || String(e));
-		}
-	});
+  'use strict';
+  if (window.__claudeCounterBridge) return;
+  window.__claudeCounterBridge = true;
+  const marker = 'ClaudeCounter';
+  const origin = location.origin;
+  const originalFetch = window.fetch.bind(window);
+  const post = (type, payload) => window.postMessage({ cc: marker, type, payload }, origin);
+  const respond = (requestId, ok, payload, error) => window.postMessage({ cc: marker, type: 'cc:response', requestId, ok, payload, error }, origin);
+  function metadata(url) {
+    if (url.origin !== origin) return null;
+    const match = url.pathname.match(/^\/api\/organizations\/([^/]+)\/chat_conversations\/([^/]+)(?:\/(completion|retry_completion))?$/);
+    return match ? { orgId: match[1], conversationId: match[2], completion: !!match[3] } : null;
+  }
+  for (const name of ['pushState', 'replaceState']) {
+    const original = history[name].bind(history);
+    history[name] = (...args) => { const result = original(...args); window.dispatchEvent(new CustomEvent('cc:urlchange')); return result; };
+  }
+  async function conversationResponse(meta, response) {
+    try {
+      if (!response.ok) return;
+      const data = await response.json();
+      if (Array.isArray(data?.chat_messages)) post('cc:conversation', { ...meta, data });
+    } catch { /* An inspection failure must not affect Claude. */ }
+  }
+  async function streamResponse(meta, response) {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = '', dataLines = [];
+    function dispatch() {
+      if (!dataLines.length) return;
+      try {
+        const data = JSON.parse(dataLines.join('\n'));
+        if (data?.type === 'message_limit' && data.message_limit) post('cc:message_limit', { ...meta, messageLimit: data.message_limit });
+      } catch { /* Other stream events are not usage data. */ }
+      dataLines = [];
+    }
+    function line(text) {
+      if (!text) dispatch();
+      else if (text.startsWith('data:')) dataLines.push(text.slice(5).replace(/^ /, ''));
+    }
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        // Keep a trailing CR until the next chunk so split CRLF is one newline.
+        let match;
+        while ((match = /\r\n|\n|\r(?!$)/.exec(buffer))) {
+          line(buffer.slice(0, match.index));
+          buffer = buffer.slice(match.index + match[0].length);
+        }
+        if (buffer.length + dataLines.reduce((n, s) => n + s.length, 0) > 1048576) { void reader.cancel().catch(() => {}); break; }
+        if (done) { if (buffer) line(buffer.replace(/\r$/, '')); dispatch(); break; }
+      }
+    } catch { /* Best effort, including user-aborted generation. */ }
+    finally { reader.releaseLock(); post('cc:generation_end', meta); }
+  }
+  window.fetch = async (...args) => {
+    let url, meta;
+    try { url = new URL(args[0] instanceof Request ? args[0].url : args[0], origin); meta = metadata(url); } catch {}
+    const method = String(args[1]?.method || (args[0] instanceof Request ? args[0].method : 'GET')).toUpperCase();
+    if (meta?.completion && method === 'POST') post('cc:generation_start', meta);
+    const response = await originalFetch(...args);
+    try {
+      if (meta?.completion && response.ok && response.headers.get('content-type')?.includes('text/event-stream')) void streamResponse(meta, response.clone());
+      else if (meta && !meta.completion && url.searchParams.has('tree')) void conversationResponse(meta, response.clone());
+    } catch { /* Return the exact original response even if cloning fails. */ }
+    return response;
+  };
+  const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+  const inFlight = new Map();
+  async function fetchJson(path) {
+    if (!inFlight.has(path)) {
+      const promise = originalFetch(origin + path, { method: 'GET', credentials: 'include', signal: AbortSignal.timeout(15000) }).then(response => {
+        if (!response.ok) throw new Error(`Claude request failed (${response.status})`);
+        return response.json();
+      }).finally(() => inFlight.delete(path));
+      inFlight.set(path, promise);
+    }
+    return inFlight.get(path);
+  }
+  window.addEventListener('message', async event => {
+    if (event.source !== window || event.origin !== origin) return;
+    const data = event.data;
+    if (data?.cc !== marker || data.type !== 'cc:request' || typeof data.requestId !== 'string' || data.requestId.length > 100) return;
+    const { requestId, kind, payload } = data;
+    try {
+      if (kind === 'ping') { respond(requestId, true, { ready: true }); return; }
+      if (!id(payload?.orgId)) throw new Error('Invalid organization');
+      if (kind === 'usage') {
+        const json = await fetchJson(`/api/organizations/${payload.orgId}/usage`);
+        respond(requestId, true, json);
+      } else if (kind === 'conversation' && id(payload.conversationId)) {
+        const json = await fetchJson(`/api/organizations/${payload.orgId}/chat_conversations/${payload.conversationId}?tree=true&rendering_mode=messages&render_all_tools=true`);
+        if (!Array.isArray(json?.chat_messages)) throw new Error('Invalid conversation response');
+        post('cc:conversation', { orgId: payload.orgId, conversationId: payload.conversationId, data: json });
+        respond(requestId, true, null);
+      } else throw new Error('Unsupported request');
+    } catch (error) { respond(requestId, false, null, error.message); }
+  });
 })();

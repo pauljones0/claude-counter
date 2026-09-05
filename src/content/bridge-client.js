@@ -5,7 +5,7 @@
  * context (not the content-script sandbox). This module provides a
  * request/response RPC layer over window.postMessage so the content script
  * can ask the injected bridge (bridge.js) to fetch usage data, conversation
- * trees, and compute SHA-256 hashes — all using the page's origin cookies.
+ * trees using the page's origin cookies. Hashing stays in the isolated world.
  *
  * It also exposes an event emitter (bridge.on) so other modules can react
  * to real-time SSE events like message_limit updates and generation starts.
@@ -14,11 +14,6 @@
 	'use strict';
 
 	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
-
-	/** @returns {object|null} The browser/chrome runtime, or null in userscript mode. */
-	function getRuntime() {
-		return globalThis.browser?.runtime || globalThis.chrome?.runtime || null;
-	}
 
 	function makeRequestId() {
 		return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -29,8 +24,8 @@
 			this._pending = new Map();
 			this._listeners = new Map();
 
-			window.addEventListener('message', (event) => {
-				if (event.source !== window) return;
+			this._handleMessage = (event) => {
+				if (event.source !== window || event.origin !== location.origin) return;
 				const data = event.data;
 				if (!data || data.cc !== 'ClaudeCounter') return;
 
@@ -47,14 +42,25 @@
 
 				// Events
 				this._emit(data.type, data.payload);
-			});
+			};
+			window.addEventListener('message', this._handleMessage);
+		}
+
+		destroy() {
+			window.removeEventListener('message', this._handleMessage);
+			for (const pending of this._pending.values()) {
+				clearTimeout(pending.timeoutId);
+				pending.reject(new Error('Bridge disposed'));
+			}
+			this._pending.clear();
+			this._listeners.clear();
 		}
 
 		_emit(type, payload) {
 			const listeners = this._listeners.get(type);
 			if (!listeners) return;
 			for (const fn of listeners) {
-				fn(payload);
+				Promise.resolve().then(() => fn(payload)).catch(() => {});
 			}
 		}
 
@@ -81,7 +87,7 @@
 						kind,
 						payload
 					},
-					'*'
+					location.origin
 				);
 			});
 		}
@@ -94,33 +100,13 @@
 			return this.request('conversation', { orgId, conversationId }, { timeoutMs: 20000 });
 		}
 
-		async requestHash(text) {
-			return this.request('hash', { text }, { timeoutMs: 5000 });
-		}
 	}
 
-	let bridgeReadyPromise = null;
-
+	// The manifest starts the page adapter before the host app. A ping confirms
+	// readiness across the isolated/page worlds without injecting a script tag.
+	let bridgeReadyPromise;
 	function injectBridgeOnce() {
-		if (bridgeReadyPromise) return bridgeReadyPromise;
-
-		const runtime = getRuntime();
-		if (!runtime) return Promise.resolve(false);
-
-		if (document.getElementById(CC.DOM.BRIDGE_SCRIPT_ID)) {
-			return Promise.resolve(true);
-		}
-
-		bridgeReadyPromise = new Promise((resolve) => {
-			const script = document.createElement('script');
-			script.id = CC.DOM.BRIDGE_SCRIPT_ID;
-			script.src = runtime.getURL('src/injected/bridge.js');
-			script.onload = () => resolve(true);
-			script.onerror = () => resolve(false);
-			(document.head || document.documentElement).appendChild(script);
-		});
-
-		return bridgeReadyPromise;
+		return bridgeReadyPromise ??= CC.bridge.request('ping', {}, { timeoutMs: 5000 }).then(() => true, () => false);
 	}
 
 	CC.bridge = new BridgeClient();

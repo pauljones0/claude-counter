@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Claude Counter",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Shows ~token count, cache timer, and native session/weekly usage bars on claude.ai.",
   "icons": {
     "16": "icons/icon16.png",
@@ -23,22 +23,32 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://claude.ai/*"],
-      "css": ["src/styles.css"],
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "css": [
+        "src/styles.css"
+      ],
       "js": [
         "src/content/constants.js",
         "src/content/bridge-client.js",
         "src/vendor/o200k_base.js",
         "src/content/tokens.js",
+        "src/content/usage.js",
+        "src/content/anchors.js",
         "src/content/ui.js",
         "src/content/main.js"
       ]
-    }
-  ],
-  "web_accessible_resources": [
+    },
     {
-      "resources": ["src/injected/bridge.js"],
-      "matches": ["https://claude.ai/*"]
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/injected/bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ]
 }

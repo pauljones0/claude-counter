@@ -1,330 +1,124 @@
-/**
- * @file main.js — Entry point and orchestrator for Claude Counter.
- *
- * Wires together the bridge, token counter, and UI modules. Responsibilities:
- *
- *   - Detects the current conversation ID and org ID from the URL/cookies
- *   - Listens for URL changes (SPA navigation) to re-attach UI and fetch data
- *   - Processes SSE message_limit events for real-time usage bar updates
- *   - Fetches conversation trees and computes token metrics
- *   - Handles usage window rollovers (auto-refreshes when a 5h/7d window resets)
- *   - Watches for branch navigation (Previous/Next buttons) to re-count tokens
- *   - Runs a 1-second tick loop for countdown timers and time-position markers
- */
+/** App lifecycle, account isolation, and bounded refresh scheduling. */
 (() => {
-	'use strict';
-
-	const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
-	if (CC.__started) return;
-	CC.__started = true;
-
-	function getConversationId() {
-		const match = window.location.pathname.match(/\/chat\/([^/?]+)/);
-		return match ? match[1] : null;
-	}
-
-	function getOrgIdFromCookie() {
-		try {
-			return document.cookie
-				.split('; ')
-				.find((row) => row.startsWith('lastActiveOrg='))
-				?.split('=')[1] || null;
-		} catch {
-			return null;
-		}
-	}
-
-	/**
-	 * Wait for an element to appear in the DOM using MutationObserver.
-	 * More efficient than polling - reacts immediately when element appears.
-	 * @param {string} selector - CSS selector
-	 * @param {number} [timeoutMs] - Optional timeout in ms. Returns null if timeout expires.
-	 */
-	function waitForElement(selector, timeoutMs) {
-		return new Promise((resolve) => {
-			const existing = document.querySelector(selector);
-			if (existing) {
-				resolve(existing);
-				return;
-			}
-
-			let timeoutId;
-			const observer = new MutationObserver(() => {
-				const el = document.querySelector(selector);
-				if (el) {
-					if (timeoutId) clearTimeout(timeoutId);
-					observer.disconnect();
-					resolve(el);
-				}
-			});
-
-			observer.observe(document.body, { childList: true, subtree: true });
-
-			if (timeoutMs) {
-				timeoutId = setTimeout(() => {
-					observer.disconnect();
-					resolve(null);
-				}, timeoutMs);
-			}
-		});
-	}
-
-	CC.waitForElement = waitForElement;
-
-	function observeUrlChanges(callback) {
-		let lastPath = window.location.pathname;
-
-		const fireIfChanged = () => {
-			const current = window.location.pathname;
-			if (current !== lastPath) {
-				lastPath = current;
-				callback();
-			}
-		};
-
-		// Listen for custom event from bridge (history methods wrapped early)
-		window.addEventListener('cc:urlchange', fireIfChanged);
-		// Also popstate for back/forward buttons
-		window.addEventListener('popstate', fireIfChanged);
-
-		return () => {
-			window.removeEventListener('cc:urlchange', fireIfChanged);
-			window.removeEventListener('popstate', fireIfChanged);
-		};
-	}
-
-	function parseUsageFromUsageEndpoint(raw) {
-		if (!raw || typeof raw !== 'object') return null;
-
-		const normalizeWindow = (w, hours) => {
-			if (!w || typeof w !== 'object') return null;
-			if (typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) return null;
-			const utilization = Math.max(0, Math.min(100, w.utilization));
-			const resets_at = typeof w.resets_at === 'string' ? w.resets_at : null;
-			return { utilization, resets_at, window_hours: hours };
-		};
-
-		const fiveHour = normalizeWindow(raw.five_hour, 5);
-		const sevenDay = normalizeWindow(raw.seven_day, 24 * 7);
-
-		if (!fiveHour && !sevenDay) return null;
-		return { five_hour: fiveHour, seven_day: sevenDay };
-	}
-
-	function parseUsageFromMessageLimit(raw) {
-		if (!raw?.windows || typeof raw.windows !== 'object') return null;
-
-		const normalizeWindow = (w, hours) => {
-			if (!w || typeof w !== 'object') return null;
-			if (typeof w.utilization !== 'number' || !Number.isFinite(w.utilization)) return null;
-			const utilization = Math.max(0, Math.min(100, w.utilization * 100));
-			const resets_at = typeof w.resets_at === 'number' && Number.isFinite(w.resets_at)
-				? new Date(w.resets_at * 1000).toISOString()
-				: null;
-			return { utilization, resets_at, window_hours: hours };
-		};
-
-		const fiveHour = normalizeWindow(raw.windows['5h'], 5);
-		const sevenDay = normalizeWindow(raw.windows['7d'], 24 * 7);
-
-		if (!fiveHour && !sevenDay) return null;
-		return { five_hour: fiveHour, seven_day: sevenDay };
-	}
-
-	let currentConversationId = null;
-	let currentOrgId = null;
-
-	let usageState = null; // last snapshot
-	let usageResetMs = { five_hour: null, seven_day: null }; // cached parsed timestamps
-	let lastUsageSseMs = 0;
-	let usageFetchInFlight = false;
-	let lastUsageUpdateMs = 0;
-	const rolloverHandledForResetMs = { five_hour: null, seven_day: null };
-
-	const ui = new CC.ui.CounterUI({
-		onUsageRefresh: async () => {
-			await refreshUsage();
-		}
-	});
-	ui.initialize();
-
-	// Bridge must be ready before we can make requests
-	const bridgeReady = CC.injectBridgeOnce();
-
-	function applyUsageUpdate(normalized, source) {
-		if (!normalized) return;
-		const now = Date.now();
-		usageState = normalized;
-		lastUsageUpdateMs = now;
-		if (source === 'sse') lastUsageSseMs = now;
-		// Cache parsed timestamps to avoid Date.parse() every tick
-		usageResetMs.five_hour = normalized.five_hour?.resets_at ? Date.parse(normalized.five_hour.resets_at) : null;
-		usageResetMs.seven_day = normalized.seven_day?.resets_at ? Date.parse(normalized.seven_day.resets_at) : null;
-		ui.setUsage(normalized);
-	}
-
-	function updateOrgIdIfNeeded(newOrgId) {
-		if (newOrgId && typeof newOrgId === 'string' && newOrgId !== currentOrgId) {
-			currentOrgId = newOrgId;
-		}
-	}
-
-	async function refreshUsage() {
-		await bridgeReady;
-		const orgId = currentOrgId || getOrgIdFromCookie();
-		if (!orgId) return;
-		updateOrgIdIfNeeded(orgId);
-
-		if (usageFetchInFlight) return;
-		usageFetchInFlight = true;
-		let raw;
-		try {
-			raw = await CC.bridge.requestUsage(orgId);
-		} catch {
-			return;
-		} finally {
-			usageFetchInFlight = false;
-		}
-
-		const parsed = parseUsageFromUsageEndpoint(raw);
-		applyUsageUpdate(parsed, 'usage');
-	}
-
-	async function refreshConversation() {
-		await bridgeReady;
-		if (!currentConversationId) {
-			ui.setConversationMetrics();
-			return;
-		}
-
-		const orgId = currentOrgId || getOrgIdFromCookie();
-		if (!orgId) return;
-		updateOrgIdIfNeeded(orgId);
-
-		try {
-			await CC.bridge.requestConversation(orgId, currentConversationId);
-		} catch {
-			// ignore
-		}
-	}
-
-	function handleGenerationStart() {
-		if (!currentConversationId) return;
-		ui.setPendingCache(true);
-	}
-
-	async function handleConversationPayload({ orgId, conversationId, data }) {
-		if (!conversationId || conversationId !== currentConversationId) return;
-		updateOrgIdIfNeeded(orgId);
-		if (!data) return;
-
-		const metrics = await CC.tokens.computeConversationMetrics(data);
-		ui.setConversationMetrics({ totalTokens: metrics.totalTokens, cachedUntil: metrics.cachedUntil });
-	}
-
-	function handleMessageLimit(messageLimit) {
-		const parsed = parseUsageFromMessageLimit(messageLimit);
-		applyUsageUpdate(parsed, 'sse');
-	}
-
-	CC.bridge.on('cc:generation_start', handleGenerationStart);
-	CC.bridge.on('cc:conversation', handleConversationPayload);
-	CC.bridge.on('cc:message_limit', handleMessageLimit);
-
-	async function handleUrlChange() {
-		currentConversationId = getConversationId();
-
-		// Attach usage line and header independently - they have different anchor elements
-		// and CHAT_MENU_TRIGGER doesn't exist on home/new pages
-		waitForElement(CC.DOM.MODEL_SELECTOR_DROPDOWN, 60000).then((el) => {
-			if (el) ui.attachUsageLine();
-		});
-		waitForElement(CC.DOM.CHAT_MENU_TRIGGER, 60000).then((el) => {
-			if (el) ui.attachHeader();
-		});
-
-		if (!currentConversationId) {
-			ui.setConversationMetrics();
-			return;
-		}
-
-		// Best-effort orgId from cookie.
-		updateOrgIdIfNeeded(getOrgIdFromCookie());
-
-		await refreshConversation();
-
-		// Usage is org-level, not conversation-level. Only fetch on first load or if stale.
-		if (!usageState) await refreshUsage();
-	}
-
-	const unobserveUrl = observeUrlChanges(handleUrlChange);
-	window.addEventListener('beforeunload', unobserveUrl);
-
-	// Refresh on branch navigation - watch for the branch indicator to change
-	let branchObserver = null;
-	document.addEventListener('click', (e) => {
-		if (!currentConversationId) return;
-		const btn = e.target.closest('button[aria-label="Previous"], button[aria-label="Next"]');
-		if (!btn) return;
-
-		// Find the branch indicator span (matches "X / Y" pattern) near the clicked button
-		const container = btn.closest('.inline-flex');
-		const spans = container?.querySelectorAll('span') || [];
-		const indicator = Array.from(spans).find((s) => /^\d+\s*\/\s*\d+$/.test(s.textContent.trim()));
-		if (!indicator) return;
-
-		const originalText = indicator.textContent;
-
-		// Clean up any existing observer
-		if (branchObserver) branchObserver.disconnect();
-
-		// Watch for the indicator text to change (with cleanup timeout)
-		branchObserver = new MutationObserver(() => {
-			if (indicator.textContent !== originalText) {
-				branchObserver.disconnect();
-				branchObserver = null;
-				refreshConversation();
-			}
-		});
-
-		branchObserver.observe(indicator, { childList: true, characterData: true, subtree: true });
-
-		// Clean up if nothing changes after 60 seconds
-		setTimeout(() => {
-			if (branchObserver) {
-				branchObserver.disconnect();
-				branchObserver = null;
-			}
-		}, 60000);
-	});
-
-	// Initial attach + fetches
-	handleUrlChange();
-
-	function tick() {
-		ui.tick();
-
-		// Refresh usage when a window ends (5h / 7d). SSE won't fire at rollover unless a message is sent.
-		const now = Date.now();
-
-		if (usageResetMs.five_hour && now >= usageResetMs.five_hour && rolloverHandledForResetMs.five_hour !== usageResetMs.five_hour) {
-			rolloverHandledForResetMs.five_hour = usageResetMs.five_hour;
-			refreshUsage();
-		}
-		if (usageResetMs.seven_day && now >= usageResetMs.seven_day && rolloverHandledForResetMs.seven_day !== usageResetMs.seven_day) {
-			rolloverHandledForResetMs.seven_day = usageResetMs.seven_day;
-			refreshUsage();
-		}
-
-		// Optional hourly safety refresh.
-		const ONE_HOUR_MS = 60 * 60 * 1000;
-		const sseAge = now - lastUsageSseMs;
-		const anyAge = now - lastUsageUpdateMs;
-		if (!document.hidden && sseAge > ONE_HOUR_MS && anyAge > ONE_HOUR_MS) {
-			refreshUsage();
-		}
-	}
-
-	// Keep countdowns + markers updated.
-	setInterval(tick, 1000);
+  'use strict';
+  const CC = (globalThis.ClaudeCounter = globalThis.ClaudeCounter || {});
+  if (CC.__started) return;
+  CC.__started = true;
+  const POLL_MS = 60000;
+  const RETRY_MS = 15000;
+  let org = null, conversation = null, route = '', revision = 0, metricRevision = 0;
+  let usage = null, usageRequest = null, conversationRequest = null;
+  let lastAttempt = -Infinity, streamRevision = 0, accountRevision = 0;
+  let disposed = false;
+  const cleanup = [];
+  const ui = new CC.ui.CounterUI({ onUsageRefresh: () => refreshUsage(true) });
+  ui.initialize();
+  const ready = CC.injectBridgeOnce();
+  function account() {
+    try { return decodeURIComponent(document.cookie.split(/;\s*/).find(x => x.startsWith('lastActiveOrg='))?.slice(14) || '') || null; }
+    catch { return null; }
+  }
+  function applyUsage(next, partial = false) {
+    if (!next) return false;
+    usage = CC.usage.merge(usage, next, partial);
+    ui.setStatus('');
+    ui.setUsage(usage);
+    return true;
+  }
+  async function refreshUsage(manual = false) {
+    if (disposed || !org || usageRequest) return;
+    if (!manual && Date.now() - lastAttempt < RETRY_MS) return;
+    lastAttempt = Date.now();
+    const requestedOrg = org, requestedRevision = accountRevision, streamAtStart = streamRevision;
+    const request = {};
+    usageRequest = request;
+    try {
+      if (!(await ready)) throw new Error('Bridge unavailable');
+      const raw = await CC.bridge.requestUsage(requestedOrg);
+      if (disposed || requestedOrg !== org || requestedRevision !== accountRevision) return;
+      // A response requested before a live update must not overwrite fresher data.
+      if (streamAtStart !== streamRevision) return;
+      if (!applyUsage(CC.usage.fromEndpoint(raw))) throw new Error('Usage unavailable');
+    } catch {
+      if (!disposed && requestedOrg === org && requestedRevision === accountRevision) ui.setStatus(usage ? 'Usage may be stale · refresh to retry' : 'Usage unavailable · refresh to retry');
+    } finally { if (usageRequest === request) usageRequest = null; }
+  }
+  async function refreshConversation() {
+    if (disposed || !org || !conversation || conversationRequest) return;
+    const requestedOrg = org, requestedConversation = conversation;
+    const request = {};
+    conversationRequest = request;
+    try {
+      if (await ready) await CC.bridge.requestConversation(requestedOrg, requestedConversation);
+    } catch { /* Keep unknown metrics unknown; never render an HTTP error as zero. */ }
+    finally { if (conversationRequest === request) conversationRequest = null; }
+  }
+  async function receiveConversation(payload) {
+    if (disposed || payload?.orgId !== org || payload?.conversationId !== conversation || !Array.isArray(payload?.data?.chat_messages)) return;
+    const version = ++metricRevision, requestedRevision = revision;
+    try {
+      const metrics = await CC.tokens.computeConversationMetrics(payload.data);
+      if (!disposed && version === metricRevision && requestedRevision === revision) ui.setConversationMetrics(metrics);
+    } catch { /* Tokenizer failures should not fabricate an empty conversation. */ }
+  }
+  function syncRoute() {
+    const nextOrg = account();
+    const nextRoute = location.pathname;
+    const nextConversation = nextRoute.match(/^\/chat\/([^/]+)\/?$/)?.[1] || null;
+    if (nextOrg === org && nextRoute === route) return;
+    const changedOrg = org !== nextOrg;
+    org = nextOrg; route = nextRoute; conversation = nextConversation;
+    revision++; metricRevision++;
+    conversationRequest = null;
+    ui.setConversationMetrics();
+    if (changedOrg) {
+      accountRevision++;
+      usage = null; usageRequest = null; lastAttempt = -Infinity;
+      ui.setUsage(null);
+      ui.setStatus(org ? 'Loading usage…' : 'Sign in to Claude to see usage');
+    }
+    ui.attach();
+    void refreshUsage();
+    void refreshConversation();
+  }
+  cleanup.push(CC.bridge.on('cc:conversation', receiveConversation));
+  cleanup.push(CC.bridge.on('cc:message_limit', payload => {
+    if (payload?.orgId !== org) return;
+    const parsed = CC.usage.fromStream(payload.messageLimit);
+    if (parsed) { streamRevision++; applyUsage(parsed, true); }
+  }));
+  cleanup.push(CC.bridge.on('cc:generation_start', payload => {
+    if (payload?.orgId === org && payload?.conversationId === conversation) ui.setPendingCache(true);
+  }));
+  cleanup.push(CC.bridge.on('cc:generation_end', payload => {
+    if (payload?.orgId === org && payload?.conversationId === conversation) void refreshConversation();
+  }));
+  function listen(target, type, fn) { target.addEventListener(type, fn); cleanup.push(() => target.removeEventListener(type, fn)); }
+  function tick() {
+    if (disposed || document.hidden) return;
+    syncRoute();
+    ui.tick();
+    const now = Date.now();
+    const expired = [usage?.five_hour, usage?.seven_day, ...(usage?.scoped || [])].some(w => w?.resets_at && Date.parse(w.resets_at) <= now);
+    if (now - lastAttempt >= (expired ? RETRY_MS : POLL_MS)) void refreshUsage();
+  }
+  listen(window, 'cc:urlchange', syncRoute);
+  listen(window, 'popstate', syncRoute);
+  listen(document, 'visibilitychange', tick);
+  let branchTimer;
+  listen(document, 'click', event => {
+    if (event.target instanceof Element && event.target.closest('button[aria-label="Previous"],button[aria-label="Next"]')) {
+      clearTimeout(branchTimer);
+      branchTimer = setTimeout(refreshConversation, 250);
+    }
+  });
+  const interval = setInterval(tick, 1000);
+  CC.destroy = () => {
+    disposed = true;
+    clearInterval(interval); clearTimeout(branchTimer);
+    cleanup.forEach(fn => fn());
+    ui.destroy(); CC.bridge.destroy(); CC.__started = false;
+  };
+  listen(window, 'pagehide', event => { if (!event.persisted) CC.destroy(); });
+  syncRoute();
 })();

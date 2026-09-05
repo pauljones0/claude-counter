@@ -1,0 +1,5 @@
+Fixes usage bars overlapping Claude's Chat/Cowork controls. Restores token-counter placement in the current header and improves narrow-window and dark-mode layout.
+
+Adds model-specific weekly limits when available, refreshes usage on the new-chat screen, and shows stale/unavailable status on errors. Improves token-count reliability, account switching, stream parsing and keyboard accessibility.
+
+No additional permissions or data collection. Token counts and cache timing remain estimates.
