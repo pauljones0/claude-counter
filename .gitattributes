@@ -1,0 +1,3 @@
+# Keep review focused on authored modules; these are reproducible build outputs.
+src/vendor/o200k_base.js linguist-generated=true
+userscript/claude-counter.user.js linguist-generated=true

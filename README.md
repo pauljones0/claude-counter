@@ -1,109 +1,55 @@
 # Claude Counter
 
-**Stop guessing how much Claude you have left.**
+A Firefox and Chromium extension showing approximate conversation tokens, an estimated cache timer, and Claude's session and weekly usage below the composer. Based on [she-llac/claude-counter](https://github.com/she-llac/claude-counter), maintained here for the [Firefox listing](https://addons.mozilla.org/firefox/addon/claude-counter/).
 
-A minimal browser extension that adds real-time token counting, cache timing, and full-precision usage bars directly into [claude.ai](https://claude.ai). No extra tabs, no guesswork — everything lives right in the composer.
+Version 0.5.0 fixes the Chat/Cowork composer overlap and supports current and legacy header anchors. Usage groups wrap at narrow widths. The refresh button works with keyboard and pointer; progress bars expose accessible names and values. Hover a usage group for the exact local reset time.
 
-![Claude Counter screenshot](./screenshot.png)
+Usage loads on the home/new-chat screen, refreshes about once a minute while visible, and updates from relevant live response streams. Model-specific weekly caps appear when Claude supplies them. Failed requests retain the last value with a stale notice, and account switches clear prior account data. Hidden tabs pause UI ticking and polling.
 
-## Features
+## Install
 
-### Token Counter
-Approximate token count for your current conversation, with a mini progress bar against Claude's 200k context limit. Know when you're running long *before* Claude starts compacting your context.
+For permanent Firefox installation, use the signed version on [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/claude-counter/). Firefox 142 or later is required.
 
-### Cache Timer
-Live countdown showing how long your conversation stays cached. This matters because **cache reads are free on subscription plans** — if you send a message while cached (within 5 minutes of the last response), your entire conversation history costs zero credits. The timer tells you the optimal window to keep chatting.
+For development, run `npm ci && npm run build`, then select `dist/firefox/manifest.json` using **about:debugging → This Firefox → Load Temporary Add-on**. The generated Firefox ZIP is an unsigned AMO upload artifact; renaming it to XPI does not sign it.
 
-### Usage Bars
-Session (5-hour) and weekly (7-day) usage bars with percentage and reset countdowns. These are **more accurate than Claude's own /usage page** because they use the unrounded utilization fractions from Claude's live SSE stream rather than the rounded percentages.
+For Chrome/Edge, use **Extensions → Developer mode → Load unpacked** and select `dist/chrome`. The generated [userscript](userscript/claude-counter.user.js) is an alternative for managers that support execution in the page world; do not run both installations together.
 
-- Bars turn red at 90% utilization as a warning
-- A vertical marker shows your current position in the time window
-- Click to manually refresh usage data
+## Build and verify
 
-## Why This Matters
+Use Node.js 22+, npm, and a clean checkout:
 
-Claude subscriptions use an internal credit system. Your plan has both a 5-hour session limit and a 7-day weekly limit — and the actual economics are surprising:
-
-- **Max 5x plan** overdelivers significantly: ~6x session limit and 8x+ weekly limits
-- **Cache reads are entirely free** on subscriptions (vs. 10% cost on the API)
-- A warm-cache message can be **36x cheaper** than equivalent API pricing
-
-Without visibility into these limits, you hit walls unexpectedly. Claude Counter makes both limits visible at a glance and helps you take advantage of the cache window for maximum value.
-
-*For the full analysis of Claude's credit system, see [Suspiciously Precise Floats](https://she-llac.com/claude-limits) by she_llac.*
-
-## Installation
-
-### Firefox Add-ons
-Install from [Firefox Add-ons (AMO)](https://addons.mozilla.org/en-CA/firefox/addon/claude-counter/).
-
-### Manual Install
-
-**Chrome / Edge / Chromium**
-1. Download the latest `claude-counter-*-chrome.zip` from [GitHub Releases](https://github.com/pauljones0/claude-counter/releases/latest)
-2. Go to `chrome://extensions` and enable **Developer mode**
-3. Drag and drop the zip onto the page
-
-**Firefox**
-1. Download the latest `claude-counter-*-firefox.xpi` from [GitHub Releases](https://github.com/pauljones0/claude-counter/releases/latest)
-2. Drag it into any Firefox window and click **Add**
-
-**Userscript**
-1. Install the userscript from [`claude-counter.user.js`](./userscript/claude-counter.user.js)
-
-## Building from Source
-
-```bash
-# Package for both stores
-./build.sh
-
-# Or individually
-./build.sh chrome    # -> dist/claude-counter-0.4.2-chrome.zip
-./build.sh firefox   # -> dist/claude-counter-0.4.2-firefox.xpi
+```sh
+npm ci
+npm run build
+npm test
+npx playwright install --with-deps firefox chromium
+npm run test:browser
+npm run test:integration
+npm run lint:addon
 ```
 
-## How It Works
-
-The extension intercepts Claude's own API traffic (read-only) to extract the data it displays:
-
-1. **Fetch interception** — Wraps `window.fetch` in the page context to read SSE streams and conversation tree responses without breaking claude.ai
-2. **SSE parsing** — Extracts `message_limit` events from completion streams for real-time, full-precision usage data
-3. **Token counting** — Walks the conversation tree from leaf to root, tokenizes visible content blocks (text, tool_use, tool_result) using a vendored o200k_base tokenizer, and caches results by content fingerprint
-4. **DOM injection** — Uses MutationObserver to attach UI elements and re-attach them when claude.ai's SPA navigation replaces DOM nodes
-5. **Bridge architecture** — A content script <-> page script bridge over `window.postMessage` allows the content script to request data that requires page-origin cookies
+`./build.sh firefox` and `./build.sh chrome` remain available. Build outputs are in `dist/`, with SHA-256 checksums. The tokenizer is bundled from pinned `gpt-tokenizer@4.0.0` sources without minification; application modules are copied without transpilation. ZIP ordering and timestamps are fixed. The userscript is generated from the same source modules and CSS.
 
 ## Architecture
 
-```
-src/
-  content/
-    constants.js      # DOM selectors, timing constants, color tokens
-    bridge-client.js   # Content-script RPC client (postMessage)
-    tokens.js          # Token counting, conversation tree walking, caching
-    ui.js              # All DOM creation, rendering, tooltips, theme support
-    main.js            # Orchestrator: URL changes, SSE events, refresh logic
-  injected/
-    bridge.js          # Page-context fetch wrapper, SSE parser, RPC server
-  styles.css           # cc-prefixed styles with CSS custom properties
-  vendor/
-    o200k_base.js      # Vendored tokenizer (MIT, gpt-tokenizer)
-```
+| Module | Responsibility |
+| --- | --- |
+| `src/injected/bridge.js` | Early page-world fetch observation, bounded SSE parser, validated read-only RPC |
+| `src/content/bridge-client.js` | Isolated-world RPC, readiness handshake, timeouts and disposal |
+| `src/content/usage.js` | Pure endpoint/stream normalization and partial snapshot merging |
+| `src/content/tokens.js` | Selected-branch traversal, binary exclusion, local hashing and token cache |
+| `src/content/anchors.js` | Current and legacy Claude layout compatibility |
+| `src/content/ui.js` | Data-driven usage rows, rendering and DOM lifecycle |
+| `src/content/main.js` | Account/route state, stale-response guards and bounded scheduling |
 
-## Privacy
+Only the bridge runs in the page world. UI and token processing remain in the extension's isolated content-script world. The bridge is registered at document start, so it does not depend on injecting a page script through the site's CSP. All network requests remain read-only and confined to claude.ai.
 
-- **All processing happens locally** — zero external servers, zero tracking
-- Reads only the `lastActiveOrg` cookie to query Claude's own `/usage` endpoint
-- Makes requests only to `claude.ai` — never to any third-party server
-- No data collection whatsoever
-- Open source — inspect every line
+## Accuracy and privacy
 
-## Credits
+Tokens are an approximation of exposed text, not Claude's internal token count. System prompts, project knowledge, images/PDFs and hidden reasoning are excluded. Compaction can invalidate the estimate. The mini bar uses a 200k reference scale, not a promise about any model's context limit. The five-minute cache timer is an estimate and does not establish billing or subscription discounts. Usage values come from Claude's undocumented API and may change format.
 
-- Original extension by [she_llac](https://github.com/she-llac/claude-counter)
-- Token counting via [gpt-tokenizer](https://github.com/niieani/gpt-tokenizer) (MIT)
-- Inspired by [Claude Usage Tracker](https://github.com/lugia19/Claude-Usage-Extension) by lugia19
+No analytics, developer servers, stored conversation history, API keys or added storage permissions. Authenticated requests go to Claude itself. See [Privacy](PRIVACY.md), [research and decisions](research/REVIEW.md), [fork inventory](research/INVENTORY.md), and [Firefox submission notes](store/firefox/REVIEWER_NOTES.md).
 
-## License
+## Credits and license
 
-MIT
+Original extension: [she_llac](https://github.com/she-llac/claude-counter). Tokenizer: [Bazyli Brzoska / gpt-tokenizer](https://github.com/niieani/gpt-tokenizer). Community findings and competing implementations informed this refactor; source links and adoption decisions are in the research report. MIT; see [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md). Independent project, not affiliated with Anthropic.

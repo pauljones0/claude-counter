@@ -6,9 +6,7 @@
  * attachments — excluding thinking blocks and binary content), and computes:
  *
  *   - totalTokens: approximate token count using the o200k_base tokenizer
- *   - cachedUntil: timestamp when the 5-minute cache window expires
- *     (cache reads are free on Claude subscriptions, so knowing this window
- *      helps users time their messages for maximum value)
+ *   - cachedUntil: estimated five-minute cache expiry, not a billing guarantee
  *
  * Uses a fingerprint-based TokenCache to avoid re-tokenizing unchanged
  * messages on every conversation update.
@@ -52,12 +50,8 @@
 	function countTokens(text) {
 		if (!text) return 0;
 		const tokenizer = getTokenizer();
-		if (!tokenizer?.countTokens) return 0;
-		try {
-			return tokenizer.countTokens(text);
-		} catch {
-			return 0;
-		}
+		if (!tokenizer?.countTokens) throw new Error('Tokenizer unavailable');
+		return tokenizer.countTokens(text, { allowedSpecial: 'all' });
 	}
 
 	function buildTrunk(conversation) {
@@ -71,10 +65,13 @@
 		if (!leaf) return [];
 
 		const trunk = [];
+		const visited = new Set();
 		let currentId = leaf;
 		while (currentId && currentId !== ROOT_MESSAGE_ID) {
+			if (visited.has(currentId)) throw new Error('Cyclic conversation tree');
+			visited.add(currentId);
 			const msg = byId.get(currentId);
-			if (!msg) break;
+			if (!msg) throw new Error('Incomplete conversation tree');
 			trunk.push(msg);
 			currentId = msg.parent_message_uuid;
 		}
@@ -102,7 +99,7 @@
 			const minimal = {
 				id: item.id,
 				name: item.name,
-				input: item.input
+				input: sanitizeContent(item.input)
 			};
 			return stableStringify(minimal);
 		}
@@ -111,7 +108,7 @@
 			const minimal = {
 				tool_use_id: item.tool_use_id,
 				is_error: item.is_error,
-				content: item.content
+				content: sanitizeContent(item.content)
 			};
 			return stableStringify(minimal);
 		}
@@ -122,7 +119,7 @@
 		if (typeof item.title === 'string') minimal.title = item.title;
 		if (typeof item.url === 'string') minimal.url = item.url;
 		if (typeof item.content === 'string') minimal.content = item.content;
-		if (Array.isArray(item.content)) minimal.content = item.content;
+		if (Array.isArray(item.content)) minimal.content = sanitizeContent(item.content);
 		if (Object.keys(minimal).length === 0) return '';
 		return stableStringify(minimal);
 	}
@@ -136,6 +133,7 @@
 			const s = stringifyCountableContentItem(item);
 			if (s) parts.push(s);
 		}
+		if (!content.length && typeof message?.text === 'string') parts.push(message.text);
 
 		// Attachment extracted content (observable, already text).
 		const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
@@ -149,12 +147,11 @@
 	}
 
 	async function hashString(str) {
-		if (!CC.bridge?.requestHash) return null;
 		try {
-			const res = await CC.bridge.requestHash(str);
-			if (res?.hash) return res.hash;
+			const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+			return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 		} catch {
-			// No local hashing fallback.
+			// Without hashing, count directly and skip caching.
 		}
 		return null;
 	}
@@ -192,7 +189,20 @@
 
 	const tokenCache = new TokenCache();
 
+	// Never serialize binary or private reasoning nested inside tool results.
+	function sanitizeContent(value, depth = 0) {
+		if (depth > 32) return null;
+		if (value === null || typeof value !== 'object') return value;
+		if (['image', 'document', 'thinking', 'redacted_thinking'].includes(value.type)) return null;
+		if (Array.isArray(value)) return value.map(v => sanitizeContent(v, depth + 1)).filter(v => v !== null);
+		const result = {};
+		for (const [key, child] of Object.entries(value)) result[key] = sanitizeContent(child, depth + 1);
+		return result;
+	}
+
 	async function computeConversationMetrics(conversation) {
+		if (!Array.isArray(conversation?.chat_messages)) throw new Error('Invalid conversation');
+		if (conversation.chat_messages.length && !conversation.current_leaf_message_uuid) throw new Error('Missing active branch');
 		const trunk = buildTrunk(conversation);
 		const trunkIds = trunk.map((m) => m.uuid).filter(Boolean);
 		tokenCache.pruneToMessageIds(trunkIds);
@@ -201,8 +211,8 @@
 		let lastAssistantMs = null;
 
 		for (const msg of trunk) {
-			if (msg?.sender === 'assistant' && msg?.created_at) {
-				const msgMs = Date.parse(msg.created_at);
+			if (msg?.sender === 'assistant' && (msg?.updated_at || msg?.created_at)) {
+				const msgMs = Date.parse(msg.updated_at || msg.created_at);
 				if (!lastAssistantMs || msgMs > lastAssistantMs) {
 					lastAssistantMs = msgMs;
 				}

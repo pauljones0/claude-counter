@@ -1,0 +1,24 @@
+{
+  "name": "claude-counter",
+  "version": "0.5.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/browser.mjs",
+    "test:integration": "node tests/integration.mjs",
+    "test:install": "node tests/firefox-install.mjs",
+    "build": "node scripts/build.mjs",
+    "lint:addon": "web-ext lint --source-dir dist/firefox --warnings-as-errors"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "gpt-tokenizer": "4.0.0",
+    "selenium-webdriver": "4.48.0",
+    "web-ext": "10.6.0"
+  }
+}
