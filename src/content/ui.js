@@ -44,6 +44,7 @@
       this.groups = new Map();
       this.pendingCache = false;
       this.refreshing = false;
+      this.available = true;
       this.frame = null;
     }
     initialize() {
@@ -65,7 +66,7 @@
       this.refreshButton.title = 'Refresh usage';
       this.status = element('span', 'cc-status');
       this.status.setAttribute('role', 'status');
-      this.usageLine.append(this.windows, this.refreshButton, this.status);
+      this.usageLine.append(this.windows, this.status, this.refreshButton);
       this.refreshButton.addEventListener('click', () => this.refresh());
       this.observer = new MutationObserver(records => {
         if (records.every(record => this.usageLine.contains(record.target) || this.headerContainer.contains(record.target))) return;
@@ -97,7 +98,12 @@
       if (anchor && anchor.nextElementSibling !== this.usageLine) anchor.after(this.usageLine);
       else if (!anchor) this.usageLine.remove();
     }
-    setStatus(message = '') { if (this.status.textContent !== message) this.status.textContent = message; this.status.hidden = !message; }
+    setAvailable(value) { this.available = value; this.usageLine.hidden = !value; }
+    setStatus(message = '') {
+      if (this.status.textContent !== message) this.status.textContent = message;
+      this.status.hidden = !message;
+      this.refreshButton.hidden = message === 'Loading usage…';
+    }
     setPendingCache(value) { this.pendingCache = value; this.renderHeader(); }
     setConversationMetrics(metrics) { this.metrics = metrics || null; this.pendingCache = false; this.renderHeader(); }
     setUsage(usage) { this.usage = usage; this.renderUsage(); }
@@ -136,6 +142,7 @@
         updateBar(view.bar, data.utilization, reset, data.window_hours);
       }
       this.windows.hidden = entries.length === 0;
+      this.usageLine.classList.toggle('cc-usageRow--empty', entries.length === 0);
       if (!entries.length && !this.status.textContent) this.setStatus('Usage unavailable');
     }
     render() { this.renderHeader(); this.renderUsage(); }

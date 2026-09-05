@@ -4,19 +4,20 @@ import { readFile } from 'node:fs/promises';
 const browser=await firefox.launch({headless:true});
 const page=await browser.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
-let calls=0, fail=false, hold=false, releaseResponse, enteredResponse;
+let calls=0, fail=false, unsupported=false, hold=false, releaseResponse, enteredResponse;
 await page.route('https://claude.ai/**', async route=>{
   const url=new URL(route.request().url());
   if(url.pathname.endsWith('/usage')) {
     calls++;
     if(hold) await new Promise(resolve=>{releaseResponse=resolve;enteredResponse();});
-    await route.fulfill({status:fail?500:200,contentType:'application/json',body:JSON.stringify(fail?{error:'unavailable'}:{five_hour:{utilization:url.pathname.includes('org-b')?12:65,resets_at:new Date(Date.now()+3600000).toISOString()}})});
+    await route.fulfill({status:fail?500:200,contentType:'application/json',body:JSON.stringify(fail?{error:'unavailable'}:unsupported?{}:{five_hour:{utilization:url.pathname.includes('org-b')?12:65,resets_at:new Date(Date.now()+3600000).toISOString()}})});
   } else if(url.pathname.includes('/chat_conversations/')) {
     await route.fulfill({contentType:'application/json',body:JSON.stringify({chat_messages:[{uuid:'m',parent_message_uuid:null,sender:'human',content:[{type:'text',text:'Hello world'}]}],current_leaf_message_uuid:'m'})});
   } else await route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><header><div id="dframe-header-actions-slot"></div></header><div data-cds="ChatComposer"><div style="position:relative;min-height:100px">Composer</div></div></body></html>'});
 });
 try {
   await page.goto('https://claude.ai/new');
+  await page.addStyleTag({content:await readFile('src/styles.css','utf8')});
   await page.evaluate(()=>{document.cookie='lastActiveOrg=org-a; path=/';});
   await page.addScriptTag({path:'src/injected/bridge.js'});
   const manifest=JSON.parse(await readFile('manifest_firefox.json','utf8'));
@@ -25,7 +26,7 @@ try {
   assert.equal(calls,1,'new-chat usage fetches immediately');
   fail=true;
   await page.getByRole('button',{name:'Refresh usage'}).click();
-  await page.waitForFunction(()=>document.querySelector('.cc-status')?.textContent.includes('stale'));
+  await page.waitForFunction(()=>document.querySelector('.cc-status')?.textContent.includes('out of date'));
   assert.match(await page.locator('.cc-usageText').textContent(),/65%/);
   const attempts=calls;
   await page.clock.install();await page.clock.fastForward(10000);
@@ -50,6 +51,21 @@ try {
   const beforeInvalid=calls;
   const invalid=await page.evaluate(()=>ClaudeCounter.bridge.requestUsage('../other').then(()=>null,error=>error.message));
   assert.match(invalid,/Invalid organization/);assert.equal(calls,beforeInvalid);
+  await page.evaluate(()=>{document.cookie='lastActiveOrg=; Max-Age=0; path=/';history.pushState({},'', '/new');});
+  await page.waitForFunction(()=>document.querySelector('.cc-usageRow').hidden);
+  assert.equal(await page.locator('.cc-usageRow').isVisible(),false);
+  const signedOutCalls=calls;
+  await page.clock.fastForward(65000);
+  assert.equal(calls,signedOutCalls,'signed-out state does not poll usage');
+  unsupported=true;
+  await page.evaluate(()=>{document.cookie='lastActiveOrg=org-free; path=/';window.dispatchEvent(new Event('cc:urlchange'));});
+  await page.waitForFunction(()=>document.querySelector('.cc-status').textContent==='Usage unavailable');
+  assert.equal(await page.locator('.cc-usageRow').isVisible(),true);
+  assert.equal(await page.locator('.cc-usageGroup').count(),0,'missing quota data must not fabricate zero');
+  unsupported=false;
+  await page.getByRole('button',{name:'Refresh usage'}).click();
+  await page.waitForFunction(()=>document.querySelector('.cc-usageText')?.textContent.startsWith('Session: 65%'));
+  assert.equal(await page.locator('.cc-status').isVisible(),false,'recovery clears unavailable message');
   await page.evaluate(()=>ClaudeCounter.destroy());
   assert.equal(await page.locator('.cc-usageRow').count(),0);
   assert.deepEqual(errors,[]);

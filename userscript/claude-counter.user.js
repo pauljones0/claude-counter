@@ -113,7 +113,7 @@
   });
 })();
 
-(() => { const style = document.createElement('style'); style.textContent = "/* Self-contained styles: Claude's generated utility classes are not an API. */\n.cc-usageRow, .cc-header {\n  --cc-text: #55554f;\n  --cc-track: #c5c5c0;\n  --cc-fill: #2878c9;\n  --cc-marker: #33332f;\n  box-sizing: border-box;\n  color: var(--cc-text);\n  font: 12px/1.5 system-ui, sans-serif;\n}\nhtml[data-mode=\"dark\"] .cc-usageRow, html[data-mode=\"dark\"] .cc-header {\n  --cc-text: #c8c8c0;\n  --cc-track: #777770;\n  --cc-fill: #65adf5;\n  --cc-marker: #f5f5ed;\n}\n.cc-usageRow {\n  position: relative;\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 6px 10px;\n  flex: 0 0 auto;\n  grid-column: 1 / -1;\n  width: 100%;\n  min-width: 0;\n  padding: 10px 12px;\n  isolation: isolate;\n}\n.cc-windows { display: flex; flex-wrap: wrap; gap: 8px 16px; flex: 1 1 240px; min-width: 0; }\n.cc-usageGroup { flex: 1 1 200px; min-width: 0; }\n.cc-usageText { display: block; overflow-wrap: anywhere; margin-bottom: 4px; }\n.cc-bar { display: block; position: relative; box-sizing: border-box; width: 100%; height: 7px; border: 1px solid var(--cc-track); border-radius: 3px; overflow: hidden; }\n.cc-bar__fill { display: block; height: 100%; background: var(--cc-fill); }\n.cc-warn .cc-bar__fill { background: #cf4343; }\n.cc-bar__marker { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cc-marker); transform: translateX(-1px); }\n.cc-header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; max-width: 100%; padding: 2px 6px; }\n.cc-tokenText, .cc-cacheText { overflow-wrap: anywhere; }\n.cc-bar--mini { width: 48px; flex: 0 0 48px; }\n.cc-refresh { appearance: none; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 1px solid var(--cc-track); border-radius: 6px; background: transparent; color: inherit; font: 18px/1 system-ui, sans-serif; cursor: pointer; }\n.cc-refresh:disabled { opacity: .5; cursor: wait; }\n.cc-refresh:focus-visible, .cc-usageGroup:focus-visible, .cc-header:focus-visible { outline: 2px solid var(--cc-fill); outline-offset: 3px; }\n.cc-status { flex-basis: 100%; font-size: 11px; }\n.cc-usageRow [hidden], .cc-header[hidden], .cc-header [hidden] { display: none !important; }\n@media (forced-colors: active) {\n  .cc-usageRow, .cc-header { --cc-text: CanvasText; --cc-track: CanvasText; --cc-fill: Highlight; --cc-marker: CanvasText; }\n  .cc-bar { forced-color-adjust: none; }\n}\n"; document.head.append(style); })();
+(() => { const style = document.createElement('style'); style.textContent = "/* Self-contained styles: Claude's generated utility classes are not an API. */\n.cc-usageRow, .cc-header {\n  --cc-text: #55554f;\n  --cc-track: #c5c5c0;\n  --cc-fill: #2878c9;\n  --cc-marker: #33332f;\n  box-sizing: border-box;\n  color: var(--cc-text);\n  font: 12px/1.5 system-ui, sans-serif;\n}\nhtml[data-mode=\"dark\"] .cc-usageRow, html[data-mode=\"dark\"] .cc-header {\n  --cc-text: #c8c8c0;\n  --cc-track: #777770;\n  --cc-fill: #65adf5;\n  --cc-marker: #f5f5ed;\n}\n.cc-usageRow {\n  position: relative;\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 6px 10px;\n  flex: 0 0 auto;\n  grid-column: 1 / -1;\n  width: 100%;\n  min-width: 0;\n  padding: 10px 12px;\n  isolation: isolate;\n}\n.cc-windows { display: flex; flex-wrap: wrap; gap: 8px 16px; flex: 1 1 240px; min-width: 0; }\n.cc-usageGroup { flex: 1 1 200px; min-width: 0; }\n.cc-usageText { display: block; overflow-wrap: anywhere; margin-bottom: 4px; }\n.cc-bar { display: block; position: relative; box-sizing: border-box; width: 100%; height: 7px; border: 1px solid var(--cc-track); border-radius: 3px; overflow: hidden; }\n.cc-bar__fill { display: block; height: 100%; background: var(--cc-fill); }\n.cc-warn .cc-bar__fill { background: #cf4343; }\n.cc-bar__marker { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cc-marker); transform: translateX(-1px); }\n.cc-header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; max-width: 100%; padding: 2px 6px; }\n.cc-tokenText, .cc-cacheText { overflow-wrap: anywhere; }\n.cc-bar--mini { width: 48px; flex: 0 0 48px; }\n.cc-refresh { appearance: none; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 1px solid var(--cc-track); border-radius: 6px; background: transparent; color: inherit; font: 18px/1 system-ui, sans-serif; cursor: pointer; }\n.cc-refresh:disabled { opacity: .5; cursor: wait; }\n.cc-refresh:focus-visible, .cc-usageGroup:focus-visible, .cc-header:focus-visible { outline: 2px solid var(--cc-fill); outline-offset: 3px; }\n.cc-status { flex-basis: 100%; font-size: 11px; }\n.cc-usageRow--empty { justify-content: flex-end; gap: 6px; padding: 6px 12px; }\n.cc-usageRow--empty .cc-status { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }\n.cc-usageRow--empty .cc-refresh { flex-basis: 24px; width: 24px; height: 24px; border-color: transparent; font-size: 16px; }\n.cc-usageRow--empty .cc-refresh:hover { border-color: var(--cc-track); }\n.cc-usageRow[hidden], .cc-usageRow [hidden], .cc-header[hidden], .cc-header [hidden] { display: none !important; }\n@media (forced-colors: active) {\n  .cc-usageRow, .cc-header { --cc-text: CanvasText; --cc-track: CanvasText; --cc-fill: Highlight; --cc-marker: CanvasText; }\n  .cc-bar { forced-color-adjust: none; }\n}\n"; document.head.append(style); })();
 /** Shared reference values, not model-specific limits or billing promises. */
 (() => {
   'use strict';
@@ -206549,6 +206549,7 @@ ${" ".repeat(indent)}}`;
       this.groups = new Map();
       this.pendingCache = false;
       this.refreshing = false;
+      this.available = true;
       this.frame = null;
     }
     initialize() {
@@ -206570,7 +206571,7 @@ ${" ".repeat(indent)}}`;
       this.refreshButton.title = 'Refresh usage';
       this.status = element('span', 'cc-status');
       this.status.setAttribute('role', 'status');
-      this.usageLine.append(this.windows, this.refreshButton, this.status);
+      this.usageLine.append(this.windows, this.status, this.refreshButton);
       this.refreshButton.addEventListener('click', () => this.refresh());
       this.observer = new MutationObserver(records => {
         if (records.every(record => this.usageLine.contains(record.target) || this.headerContainer.contains(record.target))) return;
@@ -206602,7 +206603,12 @@ ${" ".repeat(indent)}}`;
       if (anchor && anchor.nextElementSibling !== this.usageLine) anchor.after(this.usageLine);
       else if (!anchor) this.usageLine.remove();
     }
-    setStatus(message = '') { if (this.status.textContent !== message) this.status.textContent = message; this.status.hidden = !message; }
+    setAvailable(value) { this.available = value; this.usageLine.hidden = !value; }
+    setStatus(message = '') {
+      if (this.status.textContent !== message) this.status.textContent = message;
+      this.status.hidden = !message;
+      this.refreshButton.hidden = message === 'Loading usage…';
+    }
     setPendingCache(value) { this.pendingCache = value; this.renderHeader(); }
     setConversationMetrics(metrics) { this.metrics = metrics || null; this.pendingCache = false; this.renderHeader(); }
     setUsage(usage) { this.usage = usage; this.renderUsage(); }
@@ -206641,6 +206647,7 @@ ${" ".repeat(indent)}}`;
         updateBar(view.bar, data.utilization, reset, data.window_hours);
       }
       this.windows.hidden = entries.length === 0;
+      this.usageLine.classList.toggle('cc-usageRow--empty', entries.length === 0);
       if (!entries.length && !this.status.textContent) this.setStatus('Usage unavailable');
     }
     render() { this.renderHeader(); this.renderUsage(); }
@@ -206692,7 +206699,7 @@ ${" ".repeat(indent)}}`;
       if (streamAtStart !== streamRevision) return;
       if (!applyUsage(CC.usage.fromEndpoint(raw))) throw new Error('Usage unavailable');
     } catch {
-      if (!disposed && requestedOrg === org && requestedRevision === accountRevision) ui.setStatus(usage ? 'Usage may be stale · refresh to retry' : 'Usage unavailable · refresh to retry');
+      if (!disposed && requestedOrg === org && requestedRevision === accountRevision) ui.setStatus(usage ? 'Usage may be out of date' : 'Usage unavailable');
     } finally { if (usageRequest === request) usageRequest = null; }
   }
   async function refreshConversation() {
@@ -206720,6 +206727,7 @@ ${" ".repeat(indent)}}`;
     if (nextOrg === org && nextRoute === route) return;
     const changedOrg = org !== nextOrg;
     org = nextOrg; route = nextRoute; conversation = nextConversation;
+    ui.setAvailable(Boolean(org));
     revision++; metricRevision++;
     conversationRequest = null;
     ui.setConversationMetrics();

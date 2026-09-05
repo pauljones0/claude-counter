@@ -61,6 +61,22 @@ for (const [name, engine] of [['firefox',firefox],['chromium',chromium]]) {
       await page.waitForFunction(()=>document.querySelector('.card').nextElementSibling?.classList.contains('cc-usageRow'));
       assert.equal(await page.locator('.cc-usageRow').count(),1);
       if(mode==='new' && [320,900].includes(width)) await page.screenshot({path:`test-results/${name}-${mode}-${width}-${theme}.png`,fullPage:true});
+      // Unavailable usage must stay compact instead of leaving a two-line empty panel.
+      await page.evaluate(()=>{ui.setUsage(null);ui.setStatus('Usage unavailable');ui.setConversationMetrics();});
+      const empty = await page.evaluate(()=>{
+        const row=ui.usageLine.getBoundingClientRect(), status=ui.status.getBoundingClientRect(), button=ui.refreshButton.getBoundingClientRect();
+        return {height:row.height,inline:status.top<button.bottom&&status.bottom>button.top,bars:ui.windows.getBoundingClientRect().height,overflow:document.documentElement.scrollWidth>innerWidth};
+      });
+      assert.ok(empty.height<=40,`${name} ${width} unavailable row should be compact`);
+      assert.ok(empty.inline,'retry and status should share a line');
+      assert.equal(empty.bars,0);assert.equal(empty.overflow,false);
+      if(mode==='new' && [320,900].includes(width)) await page.screenshot({path:`test-results/${name}-unavailable-${width}-${theme}.png`,fullPage:true});
+      await page.evaluate(()=>ui.setStatus('Loading usage…'));
+      assert.equal(await page.getByRole('button',{name:'Refresh usage',exact:true}).isVisible(),false);
+      await page.evaluate(()=>{ui.setAvailable(false);ui.tick();});
+      assert.equal(await page.locator('.cc-usageRow').isVisible(),false,'signed-out usage has no visible footprint');
+      await page.evaluate(()=>{ui.setAvailable(true);ui.setStatus('');ui.setUsage({five_hour:{utilization:0,window_hours:5}});});
+      assert.equal(await page.getByRole('progressbar',{name:'Session usage',exact:true}).getAttribute('aria-valuenow'),'0','real zero remains visible after recovery');
       await page.evaluate(()=>ui.destroy());
       assert.equal(await page.locator('.cc-usageRow').count(),0);
       assert.deepEqual(errors,[]);

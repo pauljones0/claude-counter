@@ -40,7 +40,7 @@
       if (streamAtStart !== streamRevision) return;
       if (!applyUsage(CC.usage.fromEndpoint(raw))) throw new Error('Usage unavailable');
     } catch {
-      if (!disposed && requestedOrg === org && requestedRevision === accountRevision) ui.setStatus(usage ? 'Usage may be stale · refresh to retry' : 'Usage unavailable · refresh to retry');
+      if (!disposed && requestedOrg === org && requestedRevision === accountRevision) ui.setStatus(usage ? 'Usage may be out of date' : 'Usage unavailable');
     } finally { if (usageRequest === request) usageRequest = null; }
   }
   async function refreshConversation() {
@@ -68,6 +68,7 @@
     if (nextOrg === org && nextRoute === route) return;
     const changedOrg = org !== nextOrg;
     org = nextOrg; route = nextRoute; conversation = nextConversation;
+    ui.setAvailable(Boolean(org));
     revision++; metricRevision++;
     conversationRequest = null;
     ui.setConversationMetrics();

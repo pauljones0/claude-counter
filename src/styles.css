@@ -41,7 +41,11 @@ html[data-mode="dark"] .cc-usageRow, html[data-mode="dark"] .cc-header {
 .cc-refresh:disabled { opacity: .5; cursor: wait; }
 .cc-refresh:focus-visible, .cc-usageGroup:focus-visible, .cc-header:focus-visible { outline: 2px solid var(--cc-fill); outline-offset: 3px; }
 .cc-status { flex-basis: 100%; font-size: 11px; }
-.cc-usageRow [hidden], .cc-header[hidden], .cc-header [hidden] { display: none !important; }
+.cc-usageRow--empty { justify-content: flex-end; gap: 6px; padding: 6px 12px; }
+.cc-usageRow--empty .cc-status { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.cc-usageRow--empty .cc-refresh { flex-basis: 24px; width: 24px; height: 24px; border-color: transparent; font-size: 16px; }
+.cc-usageRow--empty .cc-refresh:hover { border-color: var(--cc-track); }
+.cc-usageRow[hidden], .cc-usageRow [hidden], .cc-header[hidden], .cc-header [hidden] { display: none !important; }
 @media (forced-colors: active) {
   .cc-usageRow, .cc-header { --cc-text: CanvasText; --cc-track: CanvasText; --cc-fill: Highlight; --cc-marker: CanvasText; }
   .cc-bar { forced-color-adjust: none; }
